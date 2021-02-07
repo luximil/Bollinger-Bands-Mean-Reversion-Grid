@@ -40,11 +40,14 @@ namespace cAlgo.Robots
         [Parameter("Initial Account Risk %", DefaultValue = 5, Group = "Risk Management")]
         public double InitialAccountRiskPct { get; set; }
 
-        [Parameter("Max. Account Risk %", DefaultValue = 20, Group = "Risk Management")]
+        [Parameter("Max. Account Risk % per Grid", DefaultValue = 20, Group = "Risk Management")]
         public double MaxAccountRiskPct { get; set; }
 
         [Parameter("Initial SL in Pips", DefaultValue = 10, Group = "Risk Management")]
         public double InitialSLPips { get; set; }
+
+        [Parameter("Min. Net Initial TP in Pips", DefaultValue = 20, Group = "Risk Management")]
+        public double MinNetInitialTPPips { get; set; }
 
         [Parameter("Enter Positions after Confirmation", DefaultValue = false, Group = "Risk Management")]
         public bool EntryAfterConfirmation { get; set; }
@@ -80,6 +83,11 @@ namespace cAlgo.Robots
             Positions.Closed += OnPositionClosed;
         }
 
+        protected override void OnBar()
+        {
+            ActiveGrids.RemoveAll(grid => grid.GridPositions.All(pos => pos == null));
+        }
+
         protected override void OnTick()
         {
             if (lastGridEntry < Bars.OpenTimes.LastValue)
@@ -111,11 +119,97 @@ namespace cAlgo.Robots
                     }
                 }
             }
+
+            if (DynamicTPActivated)
+            {
+                int buyClosingIndex = -1;
+                int sellClosingIndex = -1;
+
+                //double[] buyClosingLevels = new double[GridLevelCount];
+                //double[] sellClosingLevels = new double[GridLevelCount];
+
+                for (int i = 0; i < GridLevelCount; i++)
+                {
+                    //buyClosingLevels[i] = BB.Main.LastValue - i * (BB.Main.LastValue - BB.Bottom.LastValue) / GridLevelCount;
+                    //sellClosingLevels[i] = BB.Main.LastValue + i * (BB.Top.LastValue - BB.Main.LastValue) / GridLevelCount;
+
+                    if (Bars.ClosePrices.LastValue > BB.Main.LastValue - i * (BB.Main.LastValue - BB.Bottom.LastValue) / GridLevelCount)
+                    {
+                        buyClosingIndex = i;
+                    }
+
+                    if (Bars.ClosePrices.LastValue < BB.Main.LastValue + i * (BB.Top.LastValue - BB.Main.LastValue) / GridLevelCount)
+                    {
+                        sellClosingIndex = i;
+                    }
+                }
+
+                foreach (Grid grid in ActiveGrids)
+                {
+                    if (buyClosingIndex >= 0 && grid.Type == TradeType.Buy)
+                    {
+                        for (int i = buyClosingIndex; i < GridLevelCount; i++)
+                        {
+                            if (grid.GridPositions[i] != null)
+                            {
+                                TradeResult result = grid.GridPositions[i].Close();
+
+                                //TODO: Logging.
+                            }
+                        }
+                    }
+
+                    else if (sellClosingIndex >= 0 && grid.Type == TradeType.Sell)
+                    {
+                        for (int i = sellClosingIndex; i < GridLevelCount; i++)
+                        {
+                            if (grid.GridPositions[i] != null)
+                            {
+                                TradeResult result = grid.GridPositions[i].Close();
+
+                                //TODO: Logging.
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         protected override void OnStop()
         {
             Print(ActiveGrids.Count);
+            foreach (Grid grid in ActiveGrids)
+            {
+                string message = "";
+
+                for (int i = 0; i < GridLevelCount; i++)
+                {
+                    string pos;
+
+                    if (grid.GridPositions[i] == null)
+                    {
+                        pos = "null";
+                    }
+
+                    else
+                    {
+                        pos = grid.GridPositions[i].ToString();
+                    }
+                    message += string.Format("P{0}: {1}, ", i, pos);
+                }
+
+                Print(message.Substring(0, message.Length - 2));
+            }
+
+            for (int i = 0; i < GridLevelCount; i++)
+            {
+                double WinningTrades = KellyParameters["WinningTrades"][i];
+                double LosingTrades = KellyParameters["LosingTrades"][i];
+                double Profit = KellyParameters["Profit"][i];
+                double Loss = KellyParameters["Loss"][i];
+
+                Print(string.Format("Level {0}. Winning Trades: {1}, Losing Trades: {2}, Profit: {3}, Loss: {4}.", i, WinningTrades, LosingTrades, Profit, Loss));
+            }
         }
 
         protected bool CreateGridPositions(TradeType direction)
@@ -142,12 +236,16 @@ namespace cAlgo.Robots
             for (int i = 0; i < GridLevelCount; i++)
             {
                 double currentUnitCostPips = (UnitTradingCost + 2 * Symbol.Spread / Symbol.PipSize);
-                double TPPips = Math.Abs(Bars.ClosePrices.Last(firstIndex) - tpLevels[i]) / Symbol.PipSize;
+                double TPPips = Math.Round(Math.Abs(Bars.ClosePrices.Last(firstIndex) - tpLevels[i]) / Symbol.PipSize, 1);
 
                 // If the cost of trading level i position is greater than the target return, don't enter this level's or the following level's positions.
-                if (currentUnitCostPips >= TPPips)
+                if ((currentUnitCostPips + MinNetInitialTPPips) >= TPPips)
                 {
-                    Print(string.Format("New grid entered with only {0} levels, due to cost/target return inefficiency.", i));
+                    if (i > 0)
+                    {
+                        Print(string.Format("New grid entered with only {0} levels, due to cost/target return inefficiency.", i));
+                    }
+
                     break;
                 }
 
@@ -169,7 +267,7 @@ namespace cAlgo.Robots
                 }
             }
 
-            ActiveGrids.Add(new Grid(gridPositions));
+            ActiveGrids.Add(new Grid(direction, gridPositions));
 
             return !errorEnteringTrade;
         }
@@ -188,10 +286,17 @@ namespace cAlgo.Robots
                 double W = WinningTrades / LosingTrades;
                 double R = Profit / Math.Abs(Loss);
 
-                InitialAccountRiskPct = Math.Min((W - (1 - W) / R), MaxAccountRiskPct / 100);
+                risk = (W - (1 - W) / R);
             }
 
-            return Symbol.NormalizeVolumeInUnits(Account.FreeMargin * risk);
+            double volume = Symbol.VolumeInUnitsMin;
+
+            if (risk > 0)
+            {
+                volume = Symbol.NormalizeVolumeInUnits(Account.FreeMargin * Math.Min(risk, MaxAccountRiskPct / 100));
+            }
+
+            return volume;
         }
 
         protected void OnPositionClosed(PositionClosedEventArgs args)
@@ -220,24 +325,30 @@ namespace cAlgo.Robots
             }
 
             // Update trailing stop on TP closing.
-            if (DynamicSLActivated && args.Reason == PositionCloseReason.TakeProfit)
+            //args.Reason == PositionCloseReason.TakeProfit)
+            if (DynamicSLActivated && args.Reason != PositionCloseReason.StopLoss)
             {
                 // If the position is not the last level position, update trailing stop of the higher level positions.
                 if (level > 0)
                 {
                     foreach (Grid grid in ActiveGrids)
                     {
+                        if (grid.GridPositions[level] == null)
+                        {
+                            continue;
+                        }
+
                         if (grid.GridPositions[level].Id == args.Position.Id)
                         {
                             // Update stop loss for the other positions.
-                            double newSL = Math.Max(grid.LastClosedTradeTP, args.Position.EntryPrice);
+                            double newSL = Math.Round(Math.Max(grid.LastClosedTradeTP, args.Position.EntryPrice), Symbol.Digits);
 
                             int i = level - 1;
                             while (i >= 0)
                             {
                                 TradeResult result = grid.GridPositions[i].ModifyStopLossPrice(newSL);
 
-                                if(result.IsSuccessful)
+                                if (result.IsSuccessful)
                                 {
                                     Print("SL updated for positions in the same grid as the last closed position.");
                                 }
@@ -250,7 +361,15 @@ namespace cAlgo.Robots
                                 i--;
                             }
 
-                            grid.LastClosedTradeTP = args.Position.TakeProfit.Value;
+                            if (args.Reason == PositionCloseReason.TakeProfit)
+                            {
+                                grid.LastClosedTradeTP = args.Position.TakeProfit.Value;
+                            }
+
+                            else
+                            {
+                                grid.LastClosedTradeTP = History.FindLast(args.Position.Label, args.Position.SymbolName, args.Position.TradeType).ClosingPrice;
+                            }
 
                             break;
                         }
@@ -261,7 +380,8 @@ namespace cAlgo.Robots
             // Update ActiveGrids.
             if (level == 0)
             {
-                ActiveGrids.RemoveAll(grid => grid.GridPositions[level].Id == args.Position.Id);
+                ActiveGrids.RemoveAll(grid => grid.GridPositions[level] != null && grid.GridPositions[level].Id == args.Position.Id);
+                Print("Grid removed on close of the last position");
             }
 
             return;
@@ -272,9 +392,11 @@ namespace cAlgo.Robots
     {
         public Position[] GridPositions;
         public double LastClosedTradeTP;
+        public TradeType Type;
 
-        public Grid(Position[] positions)
+        public Grid(TradeType type, Position[] positions)
         {
+            Type = type;
             GridPositions = positions;
         }
     }
