@@ -326,7 +326,7 @@ namespace cAlgo.Robots
 
         protected double ComputeKellyVolume(int level)
         {
-            double risk = InitialAccountRiskPct / 100;
+            double risk = InitialAccountRiskPct / 100 / GridLevelCount;
 
             double WinningTrades = KellyParameters["WinningTrades"][level];
             double LosingTrades = KellyParameters["LosingTrades"][level];
