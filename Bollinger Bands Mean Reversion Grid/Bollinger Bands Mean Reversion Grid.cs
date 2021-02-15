@@ -345,7 +345,7 @@ namespace cAlgo.Robots
 
             if (risk > 0)
             {
-                volume = Math.Max(volume, Symbol.NormalizeVolumeInUnits(Account.FreeMargin * Math.Min(risk, MaxAccountRiskPct / 100)));
+                volume = Math.Max(volume, Symbol.NormalizeVolumeInUnits(Account.FreeMargin * Math.Min(risk, MaxAccountRiskPct / 100 / GridLevelCount)));
             }
 
             return volume;
