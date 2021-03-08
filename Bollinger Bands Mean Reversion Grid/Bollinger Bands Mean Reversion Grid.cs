@@ -81,12 +81,24 @@ namespace cAlgo.Robots
             ActiveGrids = new List<Grid>();
             UnitTradingCost = RoundLotCost / Symbol.LotSize;
 
-            KellyParameters = new Dictionary<string, double[]>
+            KellyParameters = new Dictionary<string, double[]> 
             {
-                { "WinningTrades", new double[GridLevelCount] },
-                { "LosingTrades", new double[GridLevelCount] },
-                { "Profit", new double[GridLevelCount] },
-                { "Loss", new double[GridLevelCount] }
+                {
+                    "WinningTrades",
+                    new double[GridLevelCount]
+                },
+                {
+                    "LosingTrades",
+                    new double[GridLevelCount]
+                },
+                {
+                    "Profit",
+                    new double[GridLevelCount]
+                },
+                {
+                    "Loss",
+                    new double[GridLevelCount]
+                }
             };
 
             firstIndex = Convert.ToInt32(EntryAfterConfirmation);
