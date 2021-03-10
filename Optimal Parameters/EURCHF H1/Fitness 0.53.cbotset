@@ -1,0 +1,22 @@
+﻿[ChartParameters]
+Symbol = EURCHF
+Timeframe = h1
+
+[cBotParameters]
+RobotId = Bollinger Bands Mean Reversion Grid
+BBSource = CloseB65C52E1-F7C0-4E62-9C94-5BA8E8F0FCEF
+BBShift = 0
+RoundLotCost = 3
+InitialAccountRiskPct = 5
+MaxAccountRiskPct = 30
+DynamicTPActivated = True
+ExportHistory = False
+ExportHistoryPath = C:\
+BBPeriods = 25
+BBStDev = 2
+BBMAType = 0
+GridLevelCount = 1
+InitialSLPips = 70
+MinNetInitialTPPips = 50
+EntryAfterConfirmation = True
+DynamicSLActivated = True

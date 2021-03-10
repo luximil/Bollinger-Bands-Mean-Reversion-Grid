@@ -526,8 +526,8 @@ namespace cAlgo.Robots
 
                 double geoMeanReturn = Math.Pow(Account.Balance / (Account.Balance - args.NetProfit), 1 / args.TotalTrades) - 1;
 
-                double variance = Math.Sqrt(netReturns.Sum(val => (val - geoMeanReturn) * (val - geoMeanReturn)) / netReturns.Count);
-                double geomodSharpe = geoMeanReturn / variance;
+                double geostdev = Math.Sqrt(netReturns.Sum(val => (val - geoMeanReturn) * (val - geoMeanReturn)) / netReturns.Count);
+                double geomodSharpe = geoMeanReturn / geostdev;
                 double winRatio = args.WinningTrades / args.TotalTrades;
 
                 return Math.Log(args.TotalTrades) * winRatio * geomodSharpe;
